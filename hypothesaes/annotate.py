@@ -1,7 +1,7 @@
 """Text annotation using LLM-based concept checking."""
 
 import numpy as np
-from typing import List, Optional, Dict, Tuple, Union, Callable
+from typing import List, Optional, Dict, Tuple
 import concurrent.futures
 from tqdm.auto import tqdm
 import os
@@ -299,6 +299,41 @@ def annotate(
 
     return results
 
+def annotate_texts_with_concepts(
+    texts: List[str],
+    concepts: List[str],
+    model: str = "gpt-4.1-mini",
+    cache_name: Optional[str] = None,
+    progress_desc: str = "Annotating",
+    show_progress: bool = True,
+    **annotation_kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Annotate all texts in a list with all concepts in a list.
+    Returns:
+        Dictionary mapping each concept to an array of annotation results, with the texts in the order they were passed in.
+    """
+    # Create tasks for each text-concept pair
+    tasks = [(text, concept) for text in texts for concept in concepts]
+    
+    # Use the annotate function to process tasks
+    results = annotate(
+        tasks=tasks,
+        model=model,
+        cache_path=os.path.join(CACHE_DIR, f"{cache_name}_hypothesis-eval.json") if cache_name else None,
+        n_workers=annotation_kwargs.pop('n_workers', DEFAULT_N_WORKERS),
+        show_progress=show_progress,
+        progress_desc=progress_desc,
+        **annotation_kwargs
+    )
+    
+    # Reorganize results into arrays per concept
+    concept_arrays = {}
+    for concept in concepts:
+        concept_arrays[concept] = np.array([results[concept][text] for text in texts])
+        
+    return concept_arrays
+
 def annotate_texts_with_concepts_embedding(
     texts: List[str],
     concepts: List[str],
@@ -309,22 +344,7 @@ def annotate_texts_with_concepts_embedding(
     show_progress: bool = True,
     text2embedding: Optional[Dict[str, np.ndarray]] = None,
 ) -> Dict[str, np.ndarray]:
-    """
-    Annotate texts with concepts using embedding similarity instead of LLM prompting.
-    
-    Args:
-        texts: List of texts to annotate
-        concepts: List of hypothesis concepts to check
-        embedding_model: Embedding model to use (OpenAI model name or sentence-transformers model)
-        similarity_threshold: Cosine similarity threshold for positive annotation (default 0.7)
-        use_local_embeddings: Whether to use local embeddings (sentence-transformers) or OpenAI
-        cache_name: Optional cache name for embeddings
-        show_progress: Whether to show progress bar
-        text2embedding: Optional pre-computed embeddings for texts (dict mapping text to embedding)
-        
-    Returns:
-        Dictionary mapping each concept to an array of annotation results (1 if similarity > threshold, else 0)
-    """
+    """Annotate texts with concepts using embedding similarity instead of LLM prompting."""
     if text2embedding is None:
         if use_local_embeddings:
             text2embedding = get_local_embeddings(
@@ -379,32 +399,4 @@ def annotate_texts_with_concepts_embedding(
         concept_array[:len(texts_with_embeddings)] = annotations_matrix[:, i]
         concept_arrays[concept] = concept_array
     
-    return concept_arrays
-
-def annotate_texts_with_concepts(
-    texts: List[str],
-    concepts: List[str],
-    model: str = "gpt-4.1-mini",
-    cache_name: Optional[str] = None,
-    progress_desc: str = "Annotating",
-    show_progress: bool = True,
-    **annotation_kwargs
-) -> Dict[str, np.ndarray]:
-    """Annotate all texts in a list with all concepts in a list."""
-    tasks = [(text, concept) for text in texts for concept in concepts]
-    
-    results = annotate(
-        tasks=tasks,
-        model=model,
-        cache_path=os.path.join(CACHE_DIR, f"{cache_name}_hypothesis-eval.json") if cache_name else None,
-        n_workers=annotation_kwargs.pop('n_workers', DEFAULT_N_WORKERS),
-        show_progress=show_progress,
-        progress_desc=progress_desc,
-        **annotation_kwargs
-    )
-    
-    concept_arrays = {}
-    for concept in concepts:
-        concept_arrays[concept] = np.array([results[concept][text] for text in texts])
-        
     return concept_arrays

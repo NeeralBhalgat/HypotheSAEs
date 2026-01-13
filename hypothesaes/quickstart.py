@@ -152,7 +152,10 @@ def interpret_sae(
     else:
         X = embeddings
     
+    # Get activations from SAE
     activations = sae.get_activations(X)
+    print(f"Activations shape: {activations.shape}")
+    # Compute prevalence for each neuron (percentage of examples where activation != 0)
     activation_counts = (activations != 0).sum(axis=0)
     activation_percent = activation_counts / activations.shape[0] * 100
     
@@ -266,10 +269,16 @@ def generate_hypotheses(
     else:
         X = embeddings
     
-    if classification is None:
+    if classification is None: # Heuristic check for whether this is a classification task
         classification = np.all(np.isin(np.random.choice(labels, size=1000, replace=True), [0, 1]))
+    
+    print(f"Embeddings shape: {embeddings.shape}")
 
+    # Get activations from SAE
     activations = sae.get_activations(X)
+    print(f"Activations shape: {activations.shape}")
+
+    print(f"\nStep 1: Selecting top {n_selected_neurons} predictive neurons")
     if n_selected_neurons > activations.shape[1]:
         raise ValueError(f"n_selected_neurons ({n_selected_neurons}) can be at most the total number of neurons ({activations.shape[1]})")
     
@@ -322,6 +331,7 @@ def generate_hypotheses(
                 'interpretation': interpretations[idx][0]
             })
     else:
+        print(f"\nStep 3: Scoring Interpretations")
         scoring_config = ScoringConfig(n_examples=n_scoring_examples)
         metrics = interpreter.score_interpretations(
             texts=texts,
@@ -371,20 +381,13 @@ def evaluate_hypotheses(
         hypotheses_df: DataFrame from generate_hypotheses()
         texts: Heldout text examples
         labels: Heldout labels
-        annotator_model: Model to use for annotation (when annotation_method="llm")
-        max_words_per_example: Maximum words per example for annotation (when annotation_method="llm")
+        annotator_model: Model to use for annotation
+        max_words_per_example: Maximum words per example for annotation
         classification: Whether this is a classification task. If None, inferred from labels
         cache_name: Optional string prefix for storing annotation cache
-        n_workers_annotation: Number of workers for parallel annotation (when annotation_method="llm")
-        corrected_pval_threshold: P-value threshold for significance after Bonferroni correction
-        annotation_method: Method for annotation - "llm" (default) or "embedding"
-        embedding_model: Embedding model to use (when annotation_method="embedding")
-        similarity_threshold: Cosine similarity threshold for embedding annotation (default 0.7)
-        use_local_embeddings: Whether to use local embeddings (when annotation_method="embedding")
-        text2embedding: Optional pre-computed embeddings for texts (when annotation_method="embedding")
         
     Returns:
-        Tuple of (metrics dict, evaluation DataFrame)
+        DataFrame with original columns plus evaluation metrics
     """
     labels = np.array(labels)
     
@@ -392,13 +395,14 @@ def evaluate_hypotheses(
     if classification is None:
         classification = np.all(np.isin(np.random.choice(labels, size=1000, replace=True), [0, 1]))
 
+    # Extract hypotheses from dataframe
     hypotheses = hypotheses_df['interpretation'].tolist()
     
+    # Step 1: Get annotations for each hypothesis on the texts
+    print(f"Step 1: Annotating texts with {len(hypotheses)} hypotheses using {annotation_method} method")
     if annotation_method == "embedding":
         if embedding_model is None:
             embedding_model = "text-embedding-3-small"
-        
-        from .annotate import annotate_texts_with_concepts_embedding
         hypothesis_annotations = annotate_texts_with_concepts_embedding(
             texts=texts,
             concepts=hypotheses,
@@ -417,6 +421,9 @@ def evaluate_hypotheses(
             cache_name=cache_name,
             n_workers=n_workers_annotation,
         )
+    
+    # Step 2: Evaluate annotations against the true labels
+    print("Step 2: Computing predictiveness of hypothesis annotations")
     metrics, evaluation_df = score_hypotheses(
         hypothesis_annotations=hypothesis_annotations,
         y_true=np.array(labels),
