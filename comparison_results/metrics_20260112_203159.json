@@ -1,0 +1,11 @@
+{
+  "embedding": {
+    "method_name": "Embedding Similarity",
+    "r2": 0.02753079420763632,
+    "significant": [
+      0,
+      2,
+      0.05
+    ]
+  }
+}

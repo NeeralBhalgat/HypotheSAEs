@@ -34,20 +34,16 @@ def sample_top_zero(
     neuron_acts = activations[:, neuron_idx]
     n_per_class = n_examples // 2
     
-    # Get indices of positive activations and take top n_per_class (or fewer if not enough positive)
     count_positive_activating = np.sum(neuron_acts > 0)
     if count_positive_activating < n_per_class:
-        print(f"[WARNING] Only found {count_positive_activating} examples with positive activation, using all available")
         top_indices = np.argsort(neuron_acts)[-count_positive_activating:]
     else:
         top_indices = np.argsort(neuron_acts)[-n_per_class:]
     
-    # Get zero activation examples
     zero_indices = np.where(neuron_acts == 0)[0]
     if len(zero_indices) >= n_per_class:
         random_indices = np.random.choice(zero_indices, size=n_per_class, replace=False)
     else:
-        print(f"[WARNING] Only found {len(zero_indices)} examples with zero activation, using all available")
         random_indices = zero_indices
     
     pos_texts = [texts[i] for i in top_indices]
@@ -91,20 +87,18 @@ def sample_percentile_bins(
     if len(high_indices) >= n_per_class:
         high_sample_indices = np.random.choice(high_indices, size=n_per_class, replace=False)
     else:
-        print(f"[WARNING] There are less than {n_per_class} examples in bin {high_percentile} for neuron {neuron_idx}; using {len(high_indices)} instead")
         high_sample_indices = high_indices
     
     if low_percentile is not None:
         low_mask = (pos_vals >= np.percentile(pos_vals, low_percentile[0])) & \
                   (pos_vals <= np.percentile(pos_vals, low_percentile[1]))
         low_indices = pos_indices[low_mask]
-    else: # Use examples with zero activation as the negative examples
+    else:
         low_indices = np.where(neuron_acts == 0)[0]
 
     if len(low_indices) >= n_per_class:
         low_sample_indices = np.random.choice(low_indices, size=n_per_class, replace=False)
     else:
-        print(f"[WARNING] There are less than {n_per_class} examples in bin {low_percentile} for neuron {neuron_idx}; using {len(low_indices)} instead")
         low_sample_indices = low_indices
     
     pos_texts = [texts[i] for i in high_sample_indices]
@@ -204,7 +198,6 @@ class NeuronInterpreter:
     ) -> Optional[str]:
         """Return a fully-formatted prompt for a given neuron or ``None`` if the neuron is dead."""
         if np.all(activations[:, neuron_idx] <= 0):
-            print(f"[WARNING] All activations for neuron {neuron_idx} are <= 0. This neuron may be dead. Skipping interpretation.")
             return None
 
         formatted_examples = config.sampling.function(
@@ -232,14 +225,11 @@ class NeuronInterpreter:
         """Parse raw LLM response into clean interpretation string."""
         response = response.strip()
         
-        # Handle incomplete response (i.e. if the model started thinking but didn't finish)
         if '<think>' in response and '</think>' not in response:
             return None
-        # Thinking completed
         if '</think>' in response:
             response = response.split('</think>')[1].strip()
         
-        # Remove any prefixes
         response = response.split('\n', 1)[0]
         prefixes = ['- ', '"-', '" -']
         for prefix in prefixes:
@@ -288,15 +278,12 @@ class NeuronInterpreter:
         config: InterpretConfig,
     ) -> List[str]:
         """Execute a batch of prompts and return parsed interpretations (one per prompt)."""
-        # Remove ``None`` before sending for completion
         valid_prompts = [p for p in prompts if p is not None]
         if not valid_prompts:
             return []
 
-        # For local models (vLLM), use a single call to get_local_completions
         llm_sampling_kwargs = {"temperature": config.llm.temperature} if config.llm.temperature is not None else {}
         if is_local_model(self.interpreter_model):
-            # If enable_thinking is True, set max_interpretation_tokens to DEFAULT_MAX_INTERPRETATION_TOKENS_THINKING if it is lower than that
             if "enable_thinking" in config.llm.tokenizer_kwargs:
                 if config.llm.tokenizer_kwargs["enable_thinking"]:
                     if config.llm.max_interpretation_tokens < DEFAULT_MAX_INTERPRETATION_TOKENS_THINKING:
@@ -310,8 +297,6 @@ class NeuronInterpreter:
                 llm_sampling_kwargs=llm_sampling_kwargs,
             )
             return [self._parse_interpretation(r) for r in raw_responses]
-
-        # Use parallel threads to generate interpretations for API models
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.n_workers_interpretation) as executor:
             future_to_idx = {
                 executor.submit(self._get_interpretation_openai, p, config): i
@@ -347,7 +332,6 @@ class NeuronInterpreter:
 
         interpretations = {idx: [] for idx in neuron_indices}
 
-        # Build prompts for every (neuron, candidate) pair
         prompts = []
         for neuron_idx, candidate_idx in interpretation_tasks:
             prompt = self._build_interpretation_prompt(
@@ -359,10 +343,8 @@ class NeuronInterpreter:
             )
             prompts.append(prompt)
 
-        # Execute all valid prompts in a single batch (implementation-aware)
         generated_interpretations = self._execute_prompts(prompts, config)
 
-        # Stitch responses back to their respective tasks / neurons
         interpretations_iterator = iter(generated_interpretations)
         for idx, (neuron_idx, _) in enumerate(interpretation_tasks):
             if prompts[idx] is None:
@@ -378,16 +360,7 @@ class NeuronInterpreter:
         labels: np.ndarray,
         activations: np.ndarray
     ) -> Dict[str, float]:
-        """Compute evaluation metrics for a single interpretation.
-        
-        Args:
-            annotations: Annotations computed by an LLM by applying a neuron's natural language interpretation to a set of examples
-            labels: Binarized neuron activations (e.g. by setting the top-N activations to 1 and the zero-activations to 0) for the scored examples
-            activations: Continuous neuron activations for the scored examples
-            
-        Returns:
-            A dictionary containing the recall, precision, F1 score, and correlation for the interpretation
-        """
+        """Compute evaluation metrics for a single interpretation."""
         if not (1 in labels and 0 in labels):
             return {"recall": 0.0, "precision": 0.0, "f1": 0.0, "correlation": 0.0}
             
@@ -426,7 +399,7 @@ class NeuronInterpreter:
                 neuron_idx=neuron_idx,
                 n_examples=config.n_examples,
                 max_words_per_example=config.max_words_per_example,
-                random_seed=neuron_idx,  # Deterministic seed based on neuron_idx
+                random_seed=neuron_idx,
                 **config.sampling_kwargs
             )
             
@@ -446,7 +419,6 @@ class NeuronInterpreter:
                 for text in eval_texts:
                     tasks.append((text, interp))
 
-        # Annotate all tasks
         cache_path = None if self.cache_name is None else os.path.join(CACHE_DIR, f"{self.cache_name}_interp-scoring.json")
         progress_desc = f"Scoring neuron interpretation fidelity ({len(interpretations)} neurons; {len(next(iter(interpretations.values())))} candidate interps per neuron; {config.n_examples} examples to score each interp)"
         annotations = annotate(
@@ -459,7 +431,6 @@ class NeuronInterpreter:
             **annotation_kwargs
         )
 
-        # Compute metrics for all interpretations
         all_metrics = {}
         for neuron_idx, neuron_interps in interpretations.items():
             all_metrics[neuron_idx] = {}

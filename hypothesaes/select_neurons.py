@@ -37,10 +37,6 @@ def select_neurons_lasso(
     X_scaled = scaler.fit_transform(activations)
     
     if alpha is not None:
-        if verbose:
-            print(f"Using provided alpha: {alpha:.2e}")
-            
-        start_time = time.time()
         if classification:
             model = LogisticRegression(
                 penalty='l1', 
@@ -53,19 +49,15 @@ def select_neurons_lasso(
         
         model.fit(X_scaled, target)
         coef = model.coef_.flatten()
-        if verbose:
-            print(f"Fitting took {time.time() - start_time:.2f}s")
         
     else:
-        # Search for alpha that gives desired number of features
         alpha_low, alpha_high = 1e-6, 1e4
         
         if verbose:
             print(f"{'LASSO iteration':>8} {'L1 Alpha':>10} {'# Features':>10} {'Time (s)':>10}")
             print("-" * 40)
         
-        total_start_time = time.time()
-        for iteration in range(20):  # Maximum binary search iterations
+        for iteration in range(20):
             iter_start_time = time.time()
             alpha = np.sqrt(alpha_low * alpha_high)
             
@@ -94,16 +86,11 @@ def select_neurons_lasso(
             else:
                 alpha_low = alpha
         
-        total_time = time.time() - total_start_time
-        if verbose and n_nonzero == n_select:
-            print(f"\nFound alpha={alpha:.2e} yielding exactly {n_select} features")
-            print(f"Total search time: {total_time:.2f}s")
-        if n_nonzero != n_select:
+        if n_nonzero != n_select and verbose:
             print(f"Warning: Search ended with {n_nonzero} features (target: {n_select})")
     
-    # Get top neurons by absolute coefficient value
     sorted_indices = np.argsort(-np.abs(coef))[:n_select]
-    selected_coefs = coef[sorted_indices]  # Return raw coefficients
+    selected_coefs = coef[sorted_indices]
     
     return sorted_indices.tolist(), selected_coefs.tolist()
 
@@ -113,25 +100,12 @@ def select_neurons_correlation(
     n_select: int,
     **kwargs
 ) -> Tuple[List[int], List[float]]:
-    """
-    Select neurons with highest correlation with target.
-    Returns (indices, correlations) tuple.
-    
-    Args:
-        activations: Neuron activation matrix (n_samples, n_neurons)
-        target: Target variable (n_samples,)
-        n_select: Number of neurons to select
-        abs_correlation: Whether to use absolute correlation values
-    
-    Returns:
-        Indices of selected neurons and corresponding correlations
-    """
+    """Select neurons with highest correlation with target."""
     correlations = np.array([
         pearsonr(activations[:, i], target)[0]
         for i in range(activations.shape[1])
     ])
     
-    # Sort by absolute correlation but return raw correlations
     sorted_indices = np.argsort(-np.abs(correlations))[:n_select]
     selected_correlations = correlations[sorted_indices]
     
@@ -145,28 +119,14 @@ def select_neurons_separation_score(
     n_zero_activating: Optional[int] = None,
     **kwargs
 ) -> Tuple[List[int], List[float]]:
-    """
-    Select neurons based on separation between top activations and zero activations.
-    Returns (indices, scores) tuple.
-    
-    Args:
-        activations: Neuron activation matrix (n_samples, n_neurons) 
-        target: Target variable (n_samples,)
-        n_select: Number of neurons to select
-        n_top: Number of top activations to use for high activation mean
-    
-    Returns:
-        Indices of selected neurons and corresponding separation scores
-    """
+    """Select neurons based on separation between top activations and zero activations."""
     scores = []
     for i in range(activations.shape[1]):
         neuron_acts = activations[:, i]
         sorted_indices = np.argsort(-neuron_acts)
         
-        # Get mean target value for top n activations
         top_mean = np.mean(target[sorted_indices[:n_top_activating]])
         
-        # Get mean target value for zero activations
         zero_indices = neuron_acts == 0
         if n_zero_activating is not None:
             zero_idx = np.where(zero_indices)[0]
@@ -189,19 +149,7 @@ def select_neurons_custom(
     n_select: int,
     metric_fn: Callable[[np.ndarray, np.ndarray], float]
 ) -> Tuple[List[int], List[float]]:
-    """
-    Select neurons using a custom metric function.
-    Returns (indices, scores) tuple.
-    
-    Args:
-        activations: Neuron activation matrix (n_samples, n_neurons)
-        target: Target variable (n_samples,)
-        n_select: Number of neurons to select
-        metric_fn: Function that takes (neuron_activations, target) and returns score
-    
-    Returns:
-        Indices of selected neurons and corresponding scores
-    """
+    """Select neurons using a custom metric function."""
     scores = np.array([
         metric_fn(activations[:, i], target)
         for i in range(activations.shape[1])
@@ -220,23 +168,7 @@ def select_neurons(
     classification: bool = False,
     **kwargs
 ) -> Tuple[List[int], List[float]]:
-    """
-    Select neurons using specified method.
-    Returns (indices, scores) tuple where scores are the raw values
-    (coefficients for lasso, correlations for correlation method, etc.)
-    
-    Args:
-        activations: Neuron activation matrix (n_samples, n_neurons)
-        target: Target variable (n_samples,)
-        n_select: Number of neurons to select
-        method: One of "lasso", "correlation", or "custom"
-        classification: Whether this is a classification task
-        **kwargs: Additional arguments passed to specific method
-    
-    Returns:
-        Indices of selected neurons and corresponding scores
-    """
-    # Check if target is multi-class categorical. If so, throw an error.
+    """Select neurons using specified method."""
     if classification and len(np.unique(target)) > 2:
         raise ValueError("classification=True, but the target variable has more than 2 classes. We currently do not support multi-class classification, but you can convert to a one-vs-rest binary classification.")
 

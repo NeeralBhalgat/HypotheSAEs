@@ -1,7 +1,7 @@
 """Text annotation using LLM-based concept checking."""
 
 import numpy as np
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Union, Callable
 import concurrent.futures
 from tqdm.auto import tqdm
 import os
@@ -12,6 +12,7 @@ import time
 from .llm_api import get_completion
 from .llm_local import is_local_model, get_local_completions
 from .utils import load_prompt, truncate_text
+from .embedding import get_openai_embeddings, get_local_embeddings
 
 CACHE_DIR = os.path.join(Path(__file__).parent.parent, 'annotation_cache')
 DEFAULT_N_WORKERS = 30 
@@ -298,6 +299,88 @@ def annotate(
 
     return results
 
+def annotate_texts_with_concepts_embedding(
+    texts: List[str],
+    concepts: List[str],
+    embedding_model: str = "text-embedding-3-small",
+    similarity_threshold: float = 0.7,
+    use_local_embeddings: bool = False,
+    cache_name: Optional[str] = None,
+    show_progress: bool = True,
+    text2embedding: Optional[Dict[str, np.ndarray]] = None,
+) -> Dict[str, np.ndarray]:
+    """
+    Annotate texts with concepts using embedding similarity instead of LLM prompting.
+    
+    Args:
+        texts: List of texts to annotate
+        concepts: List of hypothesis concepts to check
+        embedding_model: Embedding model to use (OpenAI model name or sentence-transformers model)
+        similarity_threshold: Cosine similarity threshold for positive annotation (default 0.7)
+        use_local_embeddings: Whether to use local embeddings (sentence-transformers) or OpenAI
+        cache_name: Optional cache name for embeddings
+        show_progress: Whether to show progress bar
+        text2embedding: Optional pre-computed embeddings for texts (dict mapping text to embedding)
+        
+    Returns:
+        Dictionary mapping each concept to an array of annotation results (1 if similarity > threshold, else 0)
+    """
+    if text2embedding is None:
+        if use_local_embeddings:
+            text2embedding = get_local_embeddings(
+                texts=texts,
+                model=embedding_model,
+                cache_name=f"{cache_name}_texts" if cache_name else None,
+                show_progress=show_progress
+            )
+        else:
+            text2embedding = get_openai_embeddings(
+                texts=texts,
+                model=embedding_model,
+                cache_name=f"{cache_name}_texts" if cache_name else None,
+                n_workers=1,
+                show_progress=show_progress
+            )
+    
+    texts_with_embeddings = [t for t in texts if t in text2embedding]
+    text_embeddings = np.stack([text2embedding[t] for t in texts_with_embeddings])
+    
+    if use_local_embeddings:
+        concept2embedding = get_local_embeddings(
+            texts=concepts,
+            model=embedding_model,
+            cache_name=f"{cache_name}_concepts" if cache_name else None,
+            show_progress=show_progress
+        )
+    else:
+        concept2embedding = get_openai_embeddings(
+            texts=concepts,
+            model=embedding_model,
+            cache_name=f"{cache_name}_concepts" if cache_name else None,
+            n_workers=1,
+            show_progress=show_progress
+        )
+    
+    valid_concepts = [c for c in concepts if c in concept2embedding and concept2embedding[c] is not None]
+    if not valid_concepts:
+        raise ValueError("No valid concept embeddings found. All concepts were filtered out.")
+    concept_embeddings = np.stack([concept2embedding[c] for c in valid_concepts])
+    concepts = valid_concepts
+    
+    text_embeddings_norm = text_embeddings / (np.linalg.norm(text_embeddings, axis=1, keepdims=True) + 1e-8)
+    concept_embeddings_norm = concept_embeddings / (np.linalg.norm(concept_embeddings, axis=1, keepdims=True) + 1e-8)
+    
+    similarity_matrix = np.dot(text_embeddings_norm, concept_embeddings_norm.T)
+    annotations_matrix = (similarity_matrix > similarity_threshold).astype(int)
+    
+    concept_arrays = {}
+    for i, concept in enumerate(concepts):
+        concept_array = np.zeros(len(texts), dtype=int)
+        concept_array[:len(texts_with_embeddings)] = annotations_matrix[:, i]
+        concept_arrays[concept] = concept_array
+    
+    return concept_arrays
+
 def annotate_texts_with_concepts(
     texts: List[str],
     concepts: List[str],
@@ -307,15 +390,9 @@ def annotate_texts_with_concepts(
     show_progress: bool = True,
     **annotation_kwargs
 ) -> Dict[str, np.ndarray]:
-    """
-    Annotate all texts in a list with all concepts in a list.
-    Returns:
-        Dictionary mapping each concept to an array of annotation results, with the texts in the order they were passed in.
-    """
-    # Create tasks for each text-concept pair
+    """Annotate all texts in a list with all concepts in a list."""
     tasks = [(text, concept) for text in texts for concept in concepts]
     
-    # Use the annotate function to process tasks
     results = annotate(
         tasks=tasks,
         model=model,
@@ -326,7 +403,6 @@ def annotate_texts_with_concepts(
         **annotation_kwargs
     )
     
-    # Reorganize results into arrays per concept
     concept_arrays = {}
     for concept in concepts:
         concept_arrays[concept] = np.array([results[concept][text] for text in texts])

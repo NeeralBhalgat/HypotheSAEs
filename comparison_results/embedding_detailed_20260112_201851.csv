@@ -1,0 +1,4 @@
+hypothesis,separation_score,separation_pval,regression_coef,regression_pval,feature_prevalence
+contains detailed and explicit criticism of specific actors’ appearances or performances,0.125,0.4184387948560149,0.17045454545454503,0.3122186715543911,0.32
+criticizes the movie's unrealistic or outdated romantic plotlines,-0.05701754385964897,0.7361555289182108,-0.12878787878787898,0.48326371529111184,0.76
+mentions specific historical figures or events related to the film’s subject matter,,,4.597155025483064e-17,0.14901570219239227,0.0

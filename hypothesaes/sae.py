@@ -277,7 +277,6 @@ class SparseAutoencoder(nn.Module):
             "use_batch_topk": self.use_batch_topk,
         }
         torch.save({"config": config, "state_dict": self.state_dict()}, save_path, pickle_module=pickle)
-        print(f"Saved model to {save_path}")
         return save_path
 
     # ------------------------------------------------------------------
@@ -363,7 +362,6 @@ class SparseAutoencoder(nn.Module):
                 else:
                     patience_counter += 1
                     if patience_counter >= patience:
-                        print(f"Early stopping triggered after {epoch+1} epochs")
                         break
             
             # Update progress bar
@@ -440,5 +438,4 @@ def load_model(path: str, device: str = "cuda" if torch.cuda.is_available() else
     ckpt = torch.load(path, pickle_module=pickle)
     model = SparseAutoencoder(**ckpt["config"]).to(device)
     model.load_state_dict(ckpt["state_dict"])
-    print(f"Loaded model from {path} onto device {model.device}")
     return model

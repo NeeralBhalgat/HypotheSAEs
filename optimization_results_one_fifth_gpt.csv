@@ -1,0 +1,12 @@
+config,embedder,M,K,n_hypotheses,threshold,r2,significant,n_significant,n_total,train_size,val_size,holdout_size
+emb=text-embedding-3-small_M=256_K=8_n=10_th=0.25,text-embedding-3-small,256,8,10,0.25,0.525,9/10,9,10,4000,400,400
+emb=text-embedding-3-small_M=256_K=8_n=5_th=0.25,text-embedding-3-small,256,8,5,0.25,0.515,5/5,5,5,4000,400,400
+emb=text-embedding-3-small_M=256_K=8_n=5_th=0.30,text-embedding-3-small,256,8,5,0.30,0.508,5/5,5,5,4000,400,400
+emb=text-embedding-3-small_M=128_K=8_n=10_th=0.25,text-embedding-3-small,128,8,10,0.25,0.508,8/10,8,10,4000,400,400
+emb=text-embedding-3-small_M=128_K=8_n=5_th=0.25,text-embedding-3-small,128,8,5,0.25,0.502,4/5,4,5,4000,400,400
+emb=text-embedding-3-small_M=128_K=8_n=5_th=0.30,text-embedding-3-small,128,8,5,0.30,0.495,4/5,4,5,4000,400,400
+emb=text-embedding-3-small_M=64_K=4_n=10_th=0.25,text-embedding-3-small,64,4,10,0.25,0.492,7/10,7,10,4000,400,400
+emb=text-embedding-3-small_M=64_K=4_n=5_th=0.25,text-embedding-3-small,64,4,5,0.25,0.485,4/5,4,5,4000,400,400
+emb=all-mpnet-base-v2_M=256_K=8_n=10_th=0.25,all-mpnet-base-v2,256,8,10,0.25,0.488,7/10,7,10,4000,400,400
+emb=all-MiniLM-L6-v2_M=256_K=8_n=10_th=0.25,all-MiniLM-L6-v2,256,8,10,0.25,0.455,6/10,6,10,4000,400,400
+emb=qwen-interpreter_M=256_K=8_n=10_th=0.25,text-embedding-3-small,256,8,10,0.25,0.502,8/10,8,10,4000,400,400
